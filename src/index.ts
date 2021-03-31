@@ -18,6 +18,8 @@ import { ErrorHandler, handleError } from "./error";
 const app = express();
 const port = process.env.PORT || 8080;
 
+app.use(cors());
+
 export const logger = winston.createLogger({
   level: "info",
   format: winston.format.json(),
@@ -105,3 +107,12 @@ app.use(
 app.listen(port, () => {
   logger.info(`app started @ localhost:${port}`);
 });
+function cors(): import("express-serve-static-core").RequestHandler<
+  import("express-serve-static-core").ParamsDictionary,
+  any,
+  any,
+  import("qs").ParsedQs,
+  Record<string, any>
+> {
+  throw new Error("Function not implemented.");
+}
