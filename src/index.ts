@@ -14,6 +14,7 @@ const loadedConfig: {
 export const ENV = loadedConfig.main.configDotEnv.path ? "dev" : "prod";
 import { keys, privateKey, publicKey } from "./rsa";
 import { ErrorHandler, handleError } from "./error";
+import cors from "cors";
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -107,12 +108,3 @@ app.use(
 app.listen(port, () => {
   logger.info(`app started @ localhost:${port}`);
 });
-function cors(): import("express-serve-static-core").RequestHandler<
-  import("express-serve-static-core").ParamsDictionary,
-  any,
-  any,
-  import("qs").ParsedQs,
-  Record<string, any>
-> {
-  throw new Error("Function not implemented.");
-}
