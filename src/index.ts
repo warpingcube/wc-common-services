@@ -1,34 +1,37 @@
+require("newrelic");
+require("custom-env").env();
+
 import express from "express";
 import winston from "winston";
-import { CountriesData } from "./data/countries.model";
-import { CurrenciesData } from "./data/currencies.model";
-import { Client } from "@googlemaps/google-maps-services-js";
-const loadedConfig: {
-  main: {
-    env: boolean;
-    dir: string;
-    encoding: string;
-    configDotEnv: { path: string };
-  };
-} = require("custom-env").env();
-export const ENV = loadedConfig.main.configDotEnv.path ? "dev" : "prod";
-import { keys, privateKey, publicKey } from "./rsa";
-import { ErrorHandler, handleError } from "./error";
 import cors from "cors";
 
+import { CountriesData } from "./data/countries.model";
+import { CurrenciesData } from "./data/currencies.model";
+
+import { Client } from "@googlemaps/google-maps-services-js";
+
+import { privateKey, publicKey } from "./rsa";
+import { ApiError, handleError } from "./error";
+
 const app = express();
-const port = process.env.PORT || 8080;
 
 app.use(cors());
 
-export const logger = winston.createLogger({
+export const AppLogger = winston.createLogger({
   level: "info",
-  format: winston.format.json(),
+  format: winston.format.printf(
+    (info) =>
+      `${new Date().toISOString()} ${info.level.toUpperCase()}: ${info.message}`
+  ),
   transports: [new winston.transports.Console()],
 });
 
-keys.public = process.env.RSA_PUBLIC_KEY.split("\\n").join("\n");
-keys.private = process.env.RSA_PRIVATE_KEY.split("\\n").join("\n");
+const rsaKeys = {
+  public: process.env.RSA_PUBLIC_KEY.split("\\n").join("\n"),
+  private: process.env.RSA_PRIVATE_KEY.split("\\n").join("\n"),
+};
+
+AppLogger.info("rsaKeys ready");
 
 /** HANDLERS */
 
@@ -43,10 +46,10 @@ app.get("/currencies", (_req: express.Request, res: express.Response) => {
 app.get("/rsa/enc", (req: express.Request, res: express.Response) => {
   const { plain } = req.query;
 
-  if (!plain) throw new Error("plain required");
+  if (!plain) throw new ApiError(400, "plain required");
 
-  const secure = privateKey().encryptPrivate(plain, "base64");
-  const reversed = publicKey().decryptPublic(secure, "utf8");
+  const secure = privateKey(rsaKeys.private).encryptPrivate(plain, "base64");
+  const reversed = publicKey(rsaKeys.public).decryptPublic(secure, "utf8");
 
   res.status(200).json({
     plain: reversed,
@@ -57,21 +60,21 @@ app.get("/rsa/enc", (req: express.Request, res: express.Response) => {
 app.get("/rsa/dec", (req: express.Request, res: express.Response) => {
   const _secure = req.query.secure;
 
-  if (!_secure) throw new Error("secure required");
+  if (!_secure) throw new ApiError(400, "secure required");
 
   const secure = (_secure + "").split(" ").join("+");
 
   res.status(200).json({
     secure: secure,
-    plain: publicKey().decryptPublic(secure + "", "utf8"),
+    plain: publicKey(rsaKeys.public).decryptPublic(secure + "", "utf8"),
   });
 });
 
 app.get("/addresses/geocode", (req: express.Request, res: express.Response) => {
   const { query, apiKey } = req.query;
 
-  if (!query) throw new ErrorHandler(500, "query required");
-  if (!apiKey) throw new ErrorHandler(500, "api key required");
+  if (!query) throw new ApiError(400, "query required");
+  if (!apiKey) throw new ApiError(400, "api key required");
 
   const client = new Client({});
 
@@ -84,7 +87,7 @@ app.get("/addresses/geocode", (req: express.Request, res: express.Response) => {
     })
     .then((response) => {
       if (response.data.results.length == 0)
-        throw new ErrorHandler(404, "no results found");
+        throw new ApiError(404, "no results found");
       res.status(200).json(response.data.results[0]);
     })
     .catch((err) => {
@@ -92,6 +95,16 @@ app.get("/addresses/geocode", (req: express.Request, res: express.Response) => {
         error: "google error",
       });
     });
+});
+
+app.get("/health-check", (req: express.Request, res: express.Response) => {
+  res.status(200).json({
+    status: "ok",
+  });
+});
+
+app.get("*", (req: express.Request, res: express.Response) => {
+  throw new ApiError(404, "route not found");
 });
 
 app.use(
@@ -105,6 +118,6 @@ app.use(
   }
 );
 
-app.listen(port, () => {
-  logger.info(`app started @ localhost:${port}`);
+app.listen(process.env.PORT || 8080, () => {
+  AppLogger.info(`app started`);
 });

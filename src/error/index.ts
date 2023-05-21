@@ -1,15 +1,18 @@
 import express from "express";
+import { AppLogger } from "..";
 
-export class ErrorHandler extends Error {
+export class ApiError extends Error {
   constructor(public statusCode: number, public message: string) {
-    super();
+    super(message);
     this.statusCode = statusCode;
-    this.message = message;
   }
 }
 
-export const handleError = (err: ErrorHandler | any, res: express.Response) => {
+export const handleError = (err: ApiError | any, res: express.Response) => {
   const { statusCode, message } = err;
+
+  AppLogger.error(err);
+
   res.status(statusCode || 500).json({
     status: "error",
     statusCode,
