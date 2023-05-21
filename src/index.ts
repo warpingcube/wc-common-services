@@ -282,6 +282,48 @@ app.post(
   }
 );
 
+app.get(
+  "/cloudinary/cleanup",
+  (req: express.Request, res: express.Response) => {
+    const now = new Date();
+
+    redisClient
+      .keys(`cloudinary:*:pending:*`)
+      .then((keys) => {
+        return Promise.all(
+          keys.map(async (key) => {
+            const value = JSON.parse(await redisClient.get(key));
+            return { key, value };
+          })
+        );
+      })
+      .then((data) => {
+        return data.filter((record) => {
+          const { expiration } = record.value;
+          const expirationDate = new Date(expiration);
+
+          return now > expirationDate;
+        });
+      })
+      .then((data) => {
+        return Promise.all(
+          data.map(async (record) => {
+            const { key, value } = record;
+            await redisClient.del(key);
+            // TODO delete from cloudinary
+            return { key, value };
+          })
+        );
+      })
+      .then((data) => {
+        res.status(200).json(data);
+      })
+      .catch((err) => {
+        handleError(err, res);
+      });
+  }
+);
+
 app.get("/health-check", (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: "ok",
