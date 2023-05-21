@@ -3,6 +3,7 @@ require("custom-env").env();
 
 import express from "express";
 import winston from "winston";
+import proxy from "express-http-proxy";
 import cors from "cors";
 
 import { CountriesData } from "./data/countries.model";
@@ -12,6 +13,7 @@ import { Client } from "@googlemaps/google-maps-services-js";
 
 import { privateKey, publicKey } from "./rsa";
 import { ApiError, handleError } from "./error";
+import redisClient from "./redis";
 
 const app = express();
 
@@ -97,6 +99,39 @@ app.get("/addresses/geocode", (req: express.Request, res: express.Response) => {
     });
 });
 
+app.get(
+  "/assets/cloudinary/*",
+  proxy("https://res.cloudinary.com", {
+    proxyReqPathResolver(req) {
+      return req.url.replace("/assets/cloudinary", "");
+    },
+  })
+);
+
+app.get("/cache", (req: express.Request, res: express.Response) => {
+  const { key, value, post } = req.query;
+
+  if (post != undefined) {
+    if (!key) throw new ApiError(400, "key required");
+    if (!value) throw new ApiError(400, "value required");
+
+    redisClient.set(key + "", value + "").then(() => {
+      res.status(201).json({
+        key,
+        value,
+      });
+    });
+  } else {
+    redisClient.get(key + "").then((value) => {
+      if (!value) throw new ApiError(404, `key ${key} not found`);
+      res.status(200).json({
+        key,
+        value,
+      });
+    });
+  }
+});
+
 app.get("/health-check", (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: "ok",
@@ -118,6 +153,16 @@ app.use(
   }
 );
 
-app.listen(process.env.PORT || 8080, () => {
-  AppLogger.info(`app started`);
-});
+redisClient
+  .connect()
+  .then(() => {
+    AppLogger.info(`redis connected`);
+
+    return app.listen(process.env.PORT || 8080, () => {
+      AppLogger.info(`app started`);
+    });
+  })
+  .catch((err) => {
+    AppLogger.error(err);
+    process.exit(1);
+  });
