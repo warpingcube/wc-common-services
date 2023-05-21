@@ -4,10 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node dist/index.js",
+    "start": "ts-node src/index.ts",
     "build": "tsc",
     "postinstall": "npm run build",
-    "dev": "nodemon ."
+    "dev": "nodemon src/index.ts"
   },
   "devDependencies": {
     "@types/cors": "^2.8.10",
@@ -26,8 +26,8 @@
     "express-winston": "^4.1.0",
     "global": "^4.4.0",
     "node-rsa": "^1.1.1",
-    "nodemon": "^2.0.7",
-    "ts-node": "^9.1.1",
+    "nodemon": "^2.0.22",
+    "ts-node": "^10.8.1",
     "winston": "^3.3.3"
   }
 }
