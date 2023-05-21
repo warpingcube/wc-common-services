@@ -14,10 +14,12 @@ import { Client } from "@googlemaps/google-maps-services-js";
 import { privateKey, publicKey } from "./rsa";
 import { ApiError, handleError } from "./error";
 import redisClient from "./redis";
+import { cleanCloudinaryUrl } from "./utils/cleanCloudinaryUrl";
 
 const app = express();
 
 app.use(cors());
+app.use(express.json());
 
 export const AppLogger = winston.createLogger({
   level: "info",
@@ -115,22 +117,147 @@ app.get("/cache", (req: express.Request, res: express.Response) => {
     if (!key) throw new ApiError(400, "key required");
     if (!value) throw new ApiError(400, "value required");
 
-    redisClient.set(key + "", value + "").then(() => {
-      res.status(201).json({
-        key,
-        value,
+    redisClient
+      .set(key + "", value + "")
+      .then(() => {
+        res.status(201).json({
+          key,
+          value,
+        });
+      })
+      .catch((err) => {
+        handleError(err, res);
       });
-    });
   } else {
-    redisClient.get(key + "").then((value) => {
-      if (!value) throw new ApiError(404, `key ${key} not found`);
-      res.status(200).json({
-        key,
-        value,
+    if (!key) throw new ApiError(400, "key required");
+
+    redisClient
+      .get(key + "")
+      .then((value) => {
+        if (!value) throw new ApiError(404, `key ${key} not found`);
+        res.status(200).json({
+          key,
+          value,
+        });
+      })
+      .catch((err) => {
+        handleError(err, res);
       });
-    });
   }
 });
+
+app.get("/cache/keys", (req: express.Request, res: express.Response) => {
+  redisClient
+    .keys("*")
+    .then((keys) => {
+      res.status(200).json(keys);
+    })
+    .catch((err) => {
+      handleError(err, res);
+    });
+});
+
+app.post(
+  "/cloudinary/commit",
+  (req: express.Request, res: express.Response) => {
+    const { url } = req.body;
+    if (!url) throw new ApiError(400, "url required");
+
+    const isCloudinary = (url + "").includes("res.cloudinary.com");
+    if (!isCloudinary) throw new ApiError(400, "not a cloudinary url");
+
+    const cleanUrl = cleanCloudinaryUrl(url + "");
+
+    redisClient
+      .keys(`cloudinary:*:pending:${cleanUrl}`)
+      .then((keys) => {
+        if (keys.length == 0)
+          throw new ApiError(404, "no matching pending uploads"); // TODO handle eventual consistency
+        const [key] = keys;
+        return redisClient.get(key).then((value) => {
+          return { key, value };
+        });
+      })
+      .then(({ key, value }) => {
+        const data = JSON.parse(value);
+        AppLogger.info(`cloudinary commit ${key} ${JSON.stringify(data)}`);
+
+        return redisClient.del(key).then(() => ({
+          key,
+          data,
+        }));
+      })
+      .then(({ key, data }) => {
+        res.status(200).json(data);
+      })
+      .catch((err) => {
+        handleError(err, res);
+      });
+  }
+);
+
+app.post(
+  "/cloudinary/callback",
+  (req: express.Request, res: express.Response) => {
+    AppLogger.info(`cloudinary callback ${JSON.stringify(req.body)}`);
+
+    const {
+      notification_type,
+      asset_id,
+      public_id,
+      resource_type,
+      type,
+      secure_url,
+      folder,
+    } = req.body;
+
+    if (notification_type == "upload" && resource_type == "image") {
+      const cleanUrl = cleanCloudinaryUrl(secure_url);
+      const key = `cloudinary:${resource_type}:pending:${cleanUrl}`;
+
+      const isSkipeable = ["city-academy-media", "edt-media"].find(
+        (skippeable) => {
+          return skippeable.includes(folder);
+        }
+      );
+
+      if (isSkipeable) {
+        res.status(200).json({
+          status: "ok",
+          message: "resource skipped",
+        });
+
+        return;
+      }
+
+      const ttl = 60 * 60 * 3;
+      const expirationDate = new Date(Date.now() + ttl * 1000);
+
+      const metadata = {
+        asset_id,
+        public_id,
+        resource_type,
+        secure_url,
+        clean_url: cleanUrl,
+        expiration: expirationDate.toISOString(),
+      };
+
+      redisClient.set(key, JSON.stringify(metadata));
+
+      res.status(200).json({
+        status: "ok",
+        message: "metadata saved",
+      });
+
+      return;
+    }
+
+    res.status(200).json({
+      status: "ok",
+      message: "notification ignored",
+    });
+  }
+);
 
 app.get("/health-check", (req: express.Request, res: express.Response) => {
   res.status(200).json({
