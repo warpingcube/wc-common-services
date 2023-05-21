@@ -98,6 +98,30 @@ app.get("/addresses/geocode", (req: express.Request, res: express.Response) => {
     });
 });
 
+app.get("/cache", (req: express.Request, res: express.Response) => {
+  const { key, value, post } = req.query;
+
+  if (post != undefined) {
+    if (!key) throw new ApiError(400, "key required");
+    if (!value) throw new ApiError(400, "value required");
+
+    redisClient.set(key + "", value + "").then(() => {
+      res.status(201).json({
+        key,
+        value,
+      });
+    });
+  } else {
+    redisClient.get(key + "").then((value) => {
+      if (!value) throw new ApiError(404, `key ${key} not found`);
+      res.status(200).json({
+        key,
+        value,
+      });
+    });
+  }
+});
+
 app.get("/health-check", (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: "ok",
