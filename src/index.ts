@@ -3,6 +3,7 @@ require("custom-env").env();
 
 import express from "express";
 import winston from "winston";
+import proxy from "express-http-proxy";
 import cors from "cors";
 
 import { CountriesData } from "./data/countries.model";
@@ -97,6 +98,15 @@ app.get("/addresses/geocode", (req: express.Request, res: express.Response) => {
       });
     });
 });
+
+app.get(
+  "/assets/cloudinary/*",
+  proxy("https://res.cloudinary.com", {
+    proxyReqPathResolver(req) {
+      return req.url.replace("/assets/cloudinary", "");
+    },
+  })
+);
 
 app.get("/cache", (req: express.Request, res: express.Response) => {
   const { key, value, post } = req.query;
