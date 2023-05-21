@@ -1,3 +1,4 @@
+require("newrelic");
 require("custom-env").env();
 
 import express from "express";
