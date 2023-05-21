@@ -171,8 +171,16 @@ app.post(
     redisClient
       .keys(`cloudinary:*:pending:${cleanUrl}`)
       .then((keys) => {
-        if (keys.length == 0)
-          throw new ApiError(404, "no matching pending uploads"); // TODO handle eventual consistency
+        if (keys.length == 0) {
+          const commitedKey = `cloudinary:any:commited:${cleanUrl}`;
+
+          redisClient.set(commitedKey, JSON.stringify({ cleanUrl }));
+
+          throw new ApiError(
+            200,
+            "no matching pending uploads. recording as commited"
+          );
+        }
         const [key] = keys;
         return redisClient.get(key).then((value) => {
           return { key, value };
@@ -230,23 +238,38 @@ app.post(
         return;
       }
 
-      const ttl = 60 * 60 * 3;
-      const expirationDate = new Date(Date.now() + ttl * 1000);
+      const commitedKey = `cloudinary:any:commited:${cleanUrl}`;
 
-      const metadata = {
-        asset_id,
-        public_id,
-        resource_type,
-        secure_url,
-        clean_url: cleanUrl,
-        expiration: expirationDate.toISOString(),
-      };
+      redisClient.keys(commitedKey).then((keys) => {
+        if (keys.length > 0) {
+          const [key] = keys;
 
-      redisClient.set(key, JSON.stringify(metadata));
+          redisClient.del(key);
 
-      res.status(200).json({
-        status: "ok",
-        message: "metadata saved",
+          res.status(200).json({
+            status: "ok",
+            message: "it was already commited",
+          });
+        } else {
+          const ttl = 60 * 60 * 3;
+          const expirationDate = new Date(Date.now() + ttl * 1000);
+
+          const metadata = {
+            asset_id,
+            public_id,
+            resource_type,
+            secure_url,
+            clean_url: cleanUrl,
+            expiration: expirationDate.toISOString(),
+          };
+
+          redisClient.set(key, JSON.stringify(metadata));
+
+          res.status(200).json({
+            status: "ok",
+            message: "metadata saved",
+          });
+        }
       });
 
       return;
