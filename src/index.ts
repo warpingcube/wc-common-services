@@ -12,6 +12,7 @@ import { Client } from "@googlemaps/google-maps-services-js";
 
 import { privateKey, publicKey } from "./rsa";
 import { ApiError, handleError } from "./error";
+import redisClient from "./redis";
 
 const app = express();
 
@@ -118,6 +119,16 @@ app.use(
   }
 );
 
-app.listen(process.env.PORT || 8080, () => {
-  AppLogger.info(`app started`);
-});
+redisClient
+  .connect()
+  .then(() => {
+    AppLogger.info(`redis connected`);
+
+    return app.listen(process.env.PORT || 8080, () => {
+      AppLogger.info(`app started`);
+    });
+  })
+  .catch((err) => {
+    AppLogger.error(err);
+    process.exit(1);
+  });
