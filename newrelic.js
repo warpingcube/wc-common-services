@@ -50,4 +50,7 @@ exports.config = {
       "response.headers.x*",
     ],
   },
+  application_logging: {
+    enabled: false,
+  },
 };
