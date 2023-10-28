@@ -349,12 +349,13 @@ redisClient
   .connect()
   .then(() => {
     AppLogger.info(`redis connected`);
-
-    return app.listen(process.env.PORT || 8080, () => {
-      AppLogger.info(`app started`);
-    });
   })
   .catch((err) => {
     AppLogger.error(err);
-    process.exit(1);
+    AppLogger.warn(`redis not connected`);
+  })
+  .finally(() => {
+    return app.listen(process.env.PORT || 8080, () => {
+      AppLogger.info(`app started`);
+    });
   });
